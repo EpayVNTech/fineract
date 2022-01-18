@@ -144,22 +144,22 @@ public final class CalculateLoanScheduleQueryFromApiJsonHelper {
         } else {
             if (loanTermFrequency != null && repaymentEvery != null && numberOfRepayments != null) {
                 final int suggestsedLoanTerm = repaymentEvery * numberOfRepayments;
-                if (loanTermFrequency.intValue() < suggestsedLoanTerm) {
-                    final ApiParameterError error = ApiParameterError.parameterError(
-                            "validation.msg.loan.loanTermFrequency.less.than.repayment.structure.suggests",
-                            "The parameter loanTermFrequency is less than the suggest loan term as indicated by numberOfRepayments and repaymentEvery.",
-                            "loanTermFrequency", loanTermFrequency, numberOfRepayments, repaymentEvery);
-                    dataValidationErrors.add(error);
-                } else {
-                    if (loanTermFrequency.intValue() > suggestsedLoanTerm) {
-                        final ApiParameterError error = ApiParameterError.parameterError(
-                                "validation.msg.loan.loanTermFrequency.greater.than.repayment.structure.suggests",
-                                "The parameter loanTermFrequency is greater than the suggested loan term as indicated by numberOfRepayments and repaymentEvery.",
-                                "loanTermFrequency", loanTermFrequency, numberOfRepayments, repaymentEvery);
-                        dataValidationErrors.add(error);
-                    }
-
-                }
+//                if (loanTermFrequency.intValue() < suggestsedLoanTerm) {
+//                    final ApiParameterError error = ApiParameterError.parameterError(
+//                            "validation.msg.loan.loanTermFrequency.less.than.repayment.structure.suggests",
+//                            "The parameter loanTermFrequency is less than the suggest loan term as indicated by numberOfRepayments and repaymentEvery.",
+//                            "loanTermFrequency", loanTermFrequency, numberOfRepayments, repaymentEvery);
+//                    dataValidationErrors.add(error);
+//                } else {
+//                    if (loanTermFrequency.intValue() > suggestsedLoanTerm) {
+//                        final ApiParameterError error = ApiParameterError.parameterError(
+//                                "validation.msg.loan.loanTermFrequency.greater.than.repayment.structure.suggests",
+//                                "The parameter loanTermFrequency is greater than the suggested loan term as indicated by numberOfRepayments and repaymentEvery.",
+//                                "loanTermFrequency", loanTermFrequency, numberOfRepayments, repaymentEvery);
+//                        dataValidationErrors.add(error);
+//                    }
+//
+//                }
             }
         }
     }
