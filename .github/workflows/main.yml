@@ -4,6 +4,7 @@ on:
   push:
     branches: [ prod ]
 
+
 jobs:
   build-container:
     name: Build and Publish to Azure Container Registry
