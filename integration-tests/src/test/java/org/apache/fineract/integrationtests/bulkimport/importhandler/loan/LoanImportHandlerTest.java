@@ -59,10 +59,12 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+@Order(3)
 public class LoanImportHandlerTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(LoanImportHandlerTest.class);
@@ -97,12 +99,13 @@ public class LoanImportHandlerTest {
         String lastName = Utils.randomNameGenerator("Client_LastName_", 4);
         String externalId = Utils.randomStringGenerator("ID_", 7, "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 
-        final HashMap<String, String> clientMap = new HashMap<>();
+        final HashMap<String, Object> clientMap = new HashMap<>();
         clientMap.put("officeId", outcome_office_creation.toString());
         clientMap.put("firstname", firstName);
         clientMap.put("lastname", lastName);
         clientMap.put("externalId", externalId);
         clientMap.put("dateFormat", DATE_FORMAT);
+        clientMap.put("legalFormId", 1);
         clientMap.put("locale", "en");
         clientMap.put("active", "true");
         clientMap.put("activationDate", "04 March 2011");

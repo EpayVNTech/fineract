@@ -343,6 +343,31 @@ public class ConfigurationDomainServiceJpa implements ConfigurationDomainService
         return value;
     }
 
+    @Override
+    public boolean retrievePivotDateConfig() {
+        final String propertyName = "allow-backdated-transaction-before-interest-posting";
+        final GlobalConfigurationPropertyData property = getGlobalConfigurationPropertyData(propertyName);
+        return !property.isEnabled();
+
+    }
+
+    @Override
+    public boolean isRelaxingDaysConfigForPivotDateEnabled() {
+        final String propertyName = "allow-backdated-transaction-before-interest-posting-date-for-days";
+        final GlobalConfigurationPropertyData property = getGlobalConfigurationPropertyData(propertyName);
+        return property.isEnabled();
+    }
+
+    @Override
+    public Long retrieveRelaxingDaysConfigForPivotDate() {
+        final String propertyName = "allow-backdated-transaction-before-interest-posting-date-for-days";
+        final GlobalConfigurationPropertyData property = getGlobalConfigurationPropertyData(propertyName);
+        if (property.getValue() == null) {
+            return Long.valueOf(0);
+        }
+        return property.getValue();
+    }
+
     private GlobalConfigurationPropertyData getGlobalConfigurationPropertyData(final String propertyName) {
         String identifier = ThreadLocalContextUtil.getTenant().getTenantIdentifier();
         String key = identifier + "_" + propertyName;
@@ -391,6 +416,13 @@ public class ConfigurationDomainServiceJpa implements ConfigurationDomainService
             return value;
         }
         return defaultValue;
+    }
+
+    @Override
+    public boolean isNextDayFixedDepositInterestTransferEnabledForPeriodEnd() {
+        final String propertyName = "fixed-deposit-transfer-interest-next-day-for-period-end-posting";
+        final GlobalConfigurationPropertyData property = getGlobalConfigurationPropertyData(propertyName);
+        return property.isEnabled();
     }
 
 }

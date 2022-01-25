@@ -19,50 +19,99 @@
 description = 'Fineract Provider'
 
 apply plugin: 'org.zeroturnaround.gradle.jrebel'
-apply plugin: 'war'
+apply plugin: 'java'
+apply plugin: 'eclipse'
 apply plugin: 'org.springframework.boot'
-apply plugin: 'openjpa'
 apply plugin: 'com.gorylenko.gradle-git-properties'
 apply plugin: 'io.swagger.core.v3.swagger-gradle-plugin'
 apply plugin: 'distribution'
 apply plugin: 'signing'
+apply plugin: 'com.google.cloud.tools.jib'
 
-// Configuration for the OpenJPA enhance task
-// https://github.com/radcortez/openjpa-gradle-plugin
-System.setProperty("openjpa.Log", "commons")
-
-openjpa {
-    includes = [
+// Custom OpenJPA enhancement
+compileJava.doLast {
+    def enhanceIncludes = [
         '**/AbstractPersistableCustom.class',
         '**/domain/*.class'
     ]
-    enhance {
-        enforcePropertyRestrictions true
+
+    def classesToEnhance = project.sourceSets.main.output.classesDirs.collectMany { classesDir ->
+        project.fileTree(classesDir).matching {
+            enhanceIncludes.forEach { include it }
+        }.files
     }
+
+    String persistenceXml = "META-INF/persistence.xml"
+    def persistenceXmlFile
+
+    // Check if persistence.xml is in the resource dirs.
+    project.sourceSets.main.resources.srcDirs.collect { resourceDir ->
+        def persistenceXmlFileCandidate = project.fileTree(resourceDir).matching {
+            include persistenceXml
+        }
+
+        if (!persistenceXmlFileCandidate.isEmpty()) {
+            if (persistenceXmlFile == null) {
+                persistenceXmlFile = persistenceXmlFileCandidate.singleFile
+            } else {
+                throw new InvalidUserDataException("Multiple persistence.xml files found in path: " +
+                persistenceXmlFile + ", " + persistenceXmlFileCandidate)
+            }
+        }
+
+        // Nothing found. Fallback to plain file.
+        if (persistenceXmlFile == null) {
+            persistenceXmlFile = project.file(persistenceXml)
+            if (!persistenceXmlFile.exists()) {
+                throw new InvalidUserDataException(
+                "Could not find valid persistence.xml in path " + this.persistenceXml)
+            }
+        }
+    }
+
+    org.apache.openjpa.lib.util.Options options = new org.apache.openjpa.lib.util.Options([
+        "addDefaultConstructor"      : true,
+        "enforcePropertyRestrictions": true,
+        "tmpClassLoader"             : false,
+        "propertiesFile"             : persistenceXmlFile
+    ])
+
+    def classes = project.sourceSets.main.output.classesDirs.collect { it.toURI().toURL() }
+
+    def compileJars = project.configurations.compileClasspath.files.collect { jar ->
+        jar.toURI().toURL()
+    }
+
+    def resources = project.sourceSets.main.resources.srcDirs.collect { resource ->
+        resource.toURI().toURL()
+    }
+
+    def urls = (classes + compileJars + resources)
+
+    ClassLoader currentClassLoader = Thread.currentThread().getContextClassLoader();
+    Thread.currentThread().setContextClassLoader(new URLClassLoader((URL[])urls, currentClassLoader));
+    org.apache.openjpa.enhance.PCEnhancer.run((String []) classesToEnhance, options);
+    Thread.currentThread().setContextClassLoader(currentClassLoader);
 }
 
 // Configuration for Swagger documentation generation task
 // https://github.com/swagger-api/swagger-core/tree/master/modules/swagger-gradle-plugin
 import org.apache.tools.ant.filters.ReplaceTokens
 
-task prepareInputYaml(dependsOn: 'generateGitProperties') {
+task prepareInputYaml {
+    outputs.file('config/swagger/fineract-input.yaml')
+
     doLast {
-        def versionForSwagger
-
-        if(project.ext.properties.containsKey("gitProps"))
-            versionForSwagger = project.ext.gitProps['git.commit.id.describe']
-        else
-            versionForSwagger = "unknown"
-
         copy {
             from file('config/swagger/fineract-input.yaml.template')
             into file('config/swagger')
             rename { String filename -> return 'fineract-input.yaml' }
-            filter(ReplaceTokens, tokens: [VERSION: versionForSwagger])
+            filter(ReplaceTokens, tokens: [VERSION: "${project.version}".toString()])
         }
     }
 }
 
+rat.dependsOn prepareInputYaml
 
 resolve {
     logging.captureStandardOutput LogLevel.INFO
@@ -70,7 +119,7 @@ resolve {
     outputFormat = 'YAML'
     prettyPrint = 'TRUE'
     classpath = sourceSets.main.runtimeClasspath
-    outputDir = file("${buildDir}/classes/java/main/static/swagger-ui")
+    outputDir = file("${buildDir}/generated/swagger-ui")
     openApiFile = file("config/swagger/fineract-input.yaml")
 }
 
@@ -98,45 +147,6 @@ configurations {
 }
 
 apply from: 'dependencies.gradle'
-/* TODO https://issues.apache.org/jira/browse/FINERACT-939 (dev-dependencies.gradle has been removed, as totally broken)
- // Pick up dependencies based on the environment, defaults to production
- if (project.hasProperty('env') && project.getProperty('env') == 'dev') {
- apply from:  'dev-dependencies.gradle'
- }  else {
- apply from: 'dependencies.gradle'
- }
- */
-
-/* Enable Oauth2 authentication based on environment, default to HTTP basic auth */
-if (project.hasProperty('security') && project.getProperty('security') == 'oauth') {
-    if(project.hasProperty('twofactor') && project.getProperty('twofactor') == 'enabled') {
-        copy {
-            from './properties/oauth/twofactor/'
-            into 'src/main/resources/'
-            include '*.properties'
-        }
-    } else {
-        copy {
-            from './properties/oauth/'
-            into 'src/main/resources/'
-            include '*.properties'
-        }
-    }
-}  else {
-    if(project.hasProperty('twofactor') && project.getProperty('twofactor') == 'enabled') {
-        copy {
-            from './properties/basicauth/twofactor/'
-            into 'src/main/resources/'
-            include '*.properties'
-        }
-    } else {
-        copy {
-            from './properties/basicauth/'
-            into 'src/main/resources/'
-            include '*.properties'
-        }
-    }
-}
 
 // Configuration for the modernizer plugin
 // https://github.com/andygoossens/gradle-modernizer-plugin
@@ -152,42 +162,26 @@ compileJava {
     finalizedBy resolve
 }
 
-war {
-    from("$rootDir/licenses/binary/") {
-        // notice the parens
-        into "WEB-INF/licenses/binary/" // no leading slash
-    }
-    from("$rootDir/LICENSE_RELEASE") {
-        // notice the parens
-        into "WEB-INF/" // no leading slash
-    }
-    from("$rootDir/NOTICE_RELEASE") {
-        // notice the parens
-        into "WEB-INF/" // no leading slash
-    }
-    rename ('LICENSE_RELEASE', 'LICENSE')
-    rename ('NOTICE_RELEASE', 'NOTICE')
+// If we are running Gradle within Eclipse to enhance classes with OpenJPA,
+// set the classes directory to point to Eclipse's default build directory
+if (project.hasProperty('env') && project.getProperty('env') == 'eclipse')
+{
+    sourceSets.main.java.outputDir = new File(rootProject.projectDir, "fineract-provider/bin/main")
+}
 
-    from("$rootDir/DISCLAIMER") {
-        // notice the parens
-        into "WEB-INF/" // no leading slash
+eclipse
+{
+    project {
+        buildCommand([ LaunchConfigHandle: "<project>/.externalToolBuilders/OpenJPA Enhance Builder.launch" ],  'org.eclipse.ui.externaltools.ExternalToolBuilder')
     }
-    enabled = true
 }
 
 /* http://stackoverflow.com/questions/19653311/jpa-repository-works-in-idea-and-production-but-not-in-gradle */
 sourceSets.main.output.resourcesDir = sourceSets.main.java.outputDir
 sourceSets.test.output.resourcesDir = sourceSets.test.java.outputDir
 
-/* Exclude maria db related files for non dev builds */
 if (!(project.hasProperty('env') && project.getProperty('env') == 'dev')) {
     sourceSets {
-        main {
-            java {
-                exclude '**/ServerWithMariaDB*'
-                exclude '**/MariaDB4j*'
-            }
-        }
         test {
             java {
                 exclude '**/core/boot/tests/**'
@@ -207,7 +201,7 @@ configurations {
     driver
 }
 dependencies {
-    driver 'org.drizzle.jdbc:drizzle-jdbc:1.4'
+    driver 'org.mariadb.jdbc:mariadb-java-client:2.7.3'
 }
 
 URLClassLoader loader = GroovyObject.class.classLoader
@@ -218,7 +212,7 @@ configurations.driver.each {File file ->
 task createDB {
     description= "Creates the Database. Needs database name to be passed (like: -PdbName=someDBname)"
     doLast {
-        def sql = Sql.newInstance( 'jdbc:mysql:thin://localhost:3306/', mysqlUser, mysqlPassword, 'org.drizzle.jdbc.DrizzleDriver' )
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
         sql.execute( 'create database '+"`$dbName`" )
     }
 }
@@ -226,13 +220,13 @@ task createDB {
 task dropDB {
     description= "Drops the specified database. The database name has to be passed (like: -PdbName=someDBname)"
     doLast {
-        def sql = Sql.newInstance( 'jdbc:mysql:thin://localhost:3306/', mysqlUser, mysqlPassword, 'org.drizzle.jdbc.DrizzleDriver' )
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
         sql.execute( 'DROP DATABASE '+"`$dbName`")
     }
 }
 task setBlankPassword {
     doLast {
-        def sql = Sql.newInstance( 'jdbc:mysql:thin://localhost:3306/', mysqlUser, mysqlPassword, 'org.drizzle.jdbc.DrizzleDriver' )
+        def sql = Sql.newInstance( 'jdbc:mariadb://localhost:3306/', mysqlUser, mysqlPassword, 'org.mariadb.jdbc.Driver' )
         sql.execute('USE `fineract_tenants`')
         sql.execute('UPDATE fineract_tenants.tenants SET schema_server = \'localhost\', schema_server_port = \'3306\', schema_username = \'mifos\', schema_password = \'mysql\' WHERE id=1;')
     }
@@ -242,23 +236,100 @@ bootRun {
     jvmArgs = [
         "-Dspring.output.ansi.enabled=ALWAYS"
     ]
+
+    dependencies {
+        implementation 'org.mariadb.jdbc:mariadb-java-client:2.7.3'
+    }
+
+    classpath += files("build/generated/swagger-ui")
 }
 
 springBoot {
-    mainClassName = 'org.apache.fineract.ServerApplication'
+    mainClass = 'org.apache.fineract.ServerApplication'
 }
 
 bootJar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
-        attributes 'Main-Class': 'org.springframework.boot.loader.PropertiesLauncher'
+        attributes 'Main-Class': 'org.springframework.boot.loader.PropertiesLauncher', 'Implementation-Title':   'Apache Fineract', 'Implementation-Version': archiveVersion
     }
     dependsOn resolve
+    classifier = ''
+
+    from('build/generated/swagger-ui') {
+        into 'BOOT-INF/classes/static/swagger-ui'
+    }
 }
 
-bootWar {
-    enabled = false
+jar {
+    from('build/generated/swagger-ui') {
+        include '*'
+    }
 }
+
+jar.dependsOn resolve
+
+jib {
+    from {
+        image = 'azul/zulu-openjdk-alpine:17'
+    }
+
+    to {
+        image = 'fineract'
+        tags = [
+            "${version}",
+            'latest'
+        ]
+    }
+
+    container {
+        creationTime = 'USE_CURRENT_TIMESTAMP'
+        mainClass = 'org.apache.fineract.ServerApplication'
+        jvmFlags = [
+            '-Xmx1G',
+            '-Xms1G',
+            '-XshowSettings:vm',
+            '-XX:+UseContainerSupport',
+            '-XX:+UseStringDeduplication',
+            '-XX:MinRAMPercentage=25',
+            '-XX:MaxRAMPercentage=80',
+            '--add-exports=java.naming/com.sun.jndi.ldap=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang=ALL-UNNAMED',
+            '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED',
+            '--add-opens=java.base/java.io=ALL-UNNAMED',
+            '--add-opens=java.base/java.security=ALL-UNNAMED',
+            '--add-opens=java.base/java.util=ALL-UNNAMED',
+            '--add-opens=java.management/javax.management=ALL-UNNAMED',
+            '--add-opens=java.naming/javax.naming=ALL-UNNAMED'
+        ]
+        args = [
+            '-Duser.home=/tmp',
+            '-Dfile.encoding=UTF-8',
+            '-Duser.timezone=UTC',
+            '-Djava.security.egd=file:/dev/./urandom'
+        ]
+        ports = ['8080/tcp', '8443/tcp']
+        labels = [maintainer: 'Aleksandar Vidakovic <aleks@apache.org>']
+        user = 'nobody:nogroup'
+    }
+
+    allowInsecureRegistries = true
+
+    dependencies {
+        implementation 'org.mariadb.jdbc:mariadb-java-client:2.7.3'
+    }
+
+    extraDirectories {
+        paths {
+            path {
+                from = file('build/generated/swagger-ui')
+                into = "/app/classes"
+            }
+        }
+    }
+}
+
+tasks.jibDockerBuild.dependsOn = ["bootJar"]
 
 tasks.withType(Tar) {
     compression Compression.GZIP
@@ -267,14 +338,17 @@ tasks.withType(Tar) {
 
 distributions {
     binary {
-        // TODO: Add the version number before enabling this
-        distributionBaseName = "apache-fineract-binary"
+        if(project.hasProperty("distVersion")) {
+            distributionBaseName = "apache-fineract-$distVersion-binary"
+        } else {
+            distributionBaseName = "apache-fineract-binary"
+        }
         contents {
             from bootJar
-            from war
+            // TODO: @vidakovic add war
             // TODO: @vidakovic add client library
-            from("$rootDir/licenses/binary/") {
-                into "licenses/binary/"
+            from("$rootDir/licenses/") {
+                into "licenses/"
             }
             from "$rootDir/LICENSE_RELEASE"
             from "$rootDir/NOTICE_RELEASE"
@@ -286,11 +360,15 @@ distributions {
         }
     }
     src {
-        // TODO: Add the version number before enabling this
-        distributionBaseName = "apache-fineract-src"
+        if(project.hasProperty("distVersion")) {
+            distributionBaseName = "apache-fineract-$distVersion-src"
+        } else {
+            distributionBaseName = "apache-fineract-src"
+        }
+
         contents {
             from "$rootDir/"
-            exclude '**/build' , '.git', '.gradle', '.github', '.settings', '.project', '.classpath', '.idea', 'out', '._.DS_Store', '.DS_Store', 'WebContent', '.externalToolbuilders', '.theia', '.gitpod.yml', '.travis.yml', 'LICENSE_RELEASE', 'NOTICE_RELEASE', '**/licenses/binary'
+            exclude '**/build' , '.git', '**/.gradle', '.github', '**/.settings', '**/.project', '**/.classpath', '.idea', 'out', '._.DS_Store', '.DS_Store', 'WebContent', '**/.externalToolbuilders', '.theia', '.gitpod.yml', '.travis.yml', 'LICENSE_RELEASE', 'NOTICE_RELEASE', '**/licenses', '*.class', '**/bin', '*.log', '.dockerignore', '**/gradle', '**/.gitkeep'
             rename ('LICENSE_SOURCE', 'LICENSE')
             rename ('NOTICE_SOURCE', 'NOTICE')
         }
@@ -299,6 +377,8 @@ distributions {
 
 tasks.binaryDistZip.enabled false
 tasks.srcDistZip.enabled false
+tasks.binaryDistTar.dependsOn bootJar
+tasks.srcDistTar.dependsOn prepareInputYaml
 
 // create signatures and checksums only if project parameter "fineract.release" is provided on the command line
 if( project.hasProperty("fineract.release") ) {
@@ -340,17 +420,14 @@ gitProperties {
     dateFormat = "yyyy-MM-dd'T'HH:mmZ"
     dateFormatTimeZone = "GMT"
     failOnNoGitDirectory = false
-    extProperty = 'gitProps'
 }
 
 // make sure the generateGitProperties task always executes (even when git.properties is not changed)
 generateGitProperties.outputs.upToDateWhen { false }
 
 // Gradle 7.x asks for explicit dependencies between tasks
-processResources.dependsOn generateGitProperties
 checkstyleMain.dependsOn resolve
 checkstyleTest.dependsOn resolve
 licenseMain.dependsOn processResources, generateGitProperties
-war.dependsOn resolve
 spotbugsTest.dependsOn resolve
 test.dependsOn resolve

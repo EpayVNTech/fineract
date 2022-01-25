@@ -102,4 +102,12 @@ public interface ConfigurationDomainService {
     String getAccountMappingForPaymentType();
 
     String getAccountMappingForCharge();
+
+    boolean isNextDayFixedDepositInterestTransferEnabledForPeriodEnd();
+
+    boolean retrievePivotDateConfig();
+
+    boolean isRelaxingDaysConfigForPivotDateEnabled();
+
+    Long retrieveRelaxingDaysConfigForPivotDate();
 }

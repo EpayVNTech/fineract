@@ -26,7 +26,6 @@ import static org.apache.fineract.portfolio.savings.SavingsApiConstants.feeOnMon
 import static org.apache.fineract.portfolio.savings.SavingsApiConstants.localeParamName;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
-import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.time.LocalDate;
@@ -44,6 +43,7 @@ import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 import javax.persistence.Temporal;
 import javax.persistence.TemporalType;
+import javax.validation.constraints.NotNull;
 import org.apache.fineract.infrastructure.core.api.JsonCommand;
 import org.apache.fineract.infrastructure.core.domain.AbstractPersistableCustom;
 import org.apache.fineract.infrastructure.core.service.DateUtils;
@@ -93,6 +93,13 @@ public class SavingsAccountCharge extends AbstractPersistableCustom {
 
     @Column(name = "charge_calculation_enum")
     private Integer chargeCalculation;
+
+    @Column(name = "free_withdrawal_count", nullable = true)
+    private Integer freeWithdrawalCount;
+
+    @Temporal(TemporalType.DATE)
+    @Column(name = "charge_reset_date", nullable = true)
+    private Date chargeResetDate;
 
     @Column(name = "calculation_percentage", scale = 6, precision = 19, nullable = true)
     private BigDecimal percentage;
@@ -666,6 +673,42 @@ public class SavingsAccountCharge extends AbstractPersistableCustom {
         return this.charge;
     }
 
+    public boolean isEnableFreeWithdrawal() {
+        return charge.isEnableFreeWithdrawal();
+    }
+
+    public boolean isEnablePaymentType() {
+        return charge.isEnablePaymentType();
+    }
+
+    public Integer getFrequencyFreeWithdrawalCharge() { // number of times free withdrawal allowed
+        return charge.getFrequencyFreeWithdrawalCharge();
+    }
+
+    public Integer getRestartFrequency() { // numeric value of which numeric-period, count should restart
+        return charge.getRestartFrequency();
+    }
+
+    public Integer getRestartFrequencyEnum() { // enum day/week/month for restarting the count.
+        return charge.getRestartFrequencyEnum();
+    }
+
+    public Integer getFreeWithdrawalCount() {
+        return freeWithdrawalCount;
+    }
+
+    public void setFreeWithdrawalCount(Integer freeWithdrawalCount) {
+        this.freeWithdrawalCount = freeWithdrawalCount;
+    }
+
+    public Date getResetChargeDate() {
+        return chargeResetDate;
+    }
+
+    public void setDiscountDueDate(final Date date) {
+        this.chargeResetDate = date;
+    }
+
     public SavingsAccount savingsAccount() {
         return this.savingsAccount;
     }
@@ -756,6 +799,10 @@ public class SavingsAccountCharge extends AbstractPersistableCustom {
 
     public BigDecimal updateWithdralFeeAmount(final BigDecimal transactionAmount) {
         return amountOutstanding = calculateWithdralFeeAmount(transactionAmount);
+    }
+
+    public BigDecimal updateNoWithdrawalFee() {
+        return amountOutstanding = BigDecimal.ZERO;
     }
 
     public void updateToNextDueDateFrom(final LocalDate startingDate) {

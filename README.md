@@ -1,5 +1,7 @@
-Apache Fineract: A Platform for Microfinance  [![Build Status](https://travis-ci.org/apache/fineract.svg?branch=develop)](https://travis-ci.org/apache/fineract) [![Swagger Validation](https://validator.swagger.io/validator?url=https://demo.fineract.dev/fineract-provider/swagger-ui/fineract.yaml)](https://validator.swagger.io/validator/debug?url=https://demo.fineract.dev/fineract-provider/swagger-ui/fineract.yaml) [![Docker Hub](https://img.shields.io/docker/pulls/apache/fineract.svg?logo=Docker)](https://hub.docker.com/r/apache/fineract)  [![Docker Build](https://img.shields.io/docker/cloud/build/apache/fineract.svg?logo=Docker)](https://hub.docker.com/r/apache/fineract/builds)
+Apache Fineract: A Platform for Microfinance
 ============
+[![Swagger Validation](https://validator.swagger.io/validator?url=https://demo.fineract.dev/fineract-provider/swagger-ui/fineract.yaml)](https://validator.swagger.io/validator/debug?url=https://demo.fineract.dev/fineract-provider/swagger-ui/fineract.yaml) [![build](https://github.com/apache/fineract/actions/workflows/build.yml/badge.svg)](https://github.com/apache/fineract/actions/workflows/build.yml) [![Docker Hub](https://img.shields.io/docker/pulls/apache/fineract.svg?logo=Docker)](https://hub.docker.com/r/apache/fineract)  [![Docker Build](https://img.shields.io/docker/cloud/build/apache/fineract.svg?logo=Docker)](https://hub.docker.com/r/apache/fineract/builds) [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=apache_fineract&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=apache_fineract)
+
 
 Fineract is a mature platform with open APIs that provides a reliable, robust, and affordable core banking solution for financial institutions offering services to the world’s 3 billion underbanked and unbanked.
 
@@ -18,18 +20,18 @@ If you are interested in contributing to this project, but perhaps don't quite k
 
 Requirements
 ============
-* Java >= 11 (OpenJDK JVM is tested by our CI on Travis)
-* MySQL 5.7
+* Java >= 17 (OpenJDK JVM is tested by our CI on Travis)
+* MariaDB 10.6
 
 You can run the required version of the database server in a container, instead of having to install it, like this:
 
-    docker run --name mysql-5.7 -p 3306:3306 -e MYSQL_ROOT_PASSWORD=mysql -d mysql:5.7
+    docker run --name mariadb-10.6 -p 3306:3306 -e MARIADB_ROOT_PASSWORD=mysql -d mariadb:10.6
 
 and stop and destroy it like this:
 
-    docker rm -f mysql-5.7
+    docker rm -f mariadb-10.6
 
-Beware that this database container database keeps its state inside the container and not on the host filesystem.  It is lost when you destroy (rm) this container.  This is typically fine for development.  See [Caveats: Where to Store Data on the database container documentation](https://hub.docker.com/_/mysql) re. how to make it persistent instead of ephemeral.
+Beware that this database container database keeps its state inside the container and not on the host filesystem.  It is lost when you destroy (rm) this container.  This is typically fine for development.  See [Caveats: Where to Store Data on the database container documentation](https://hub.docker.com/_/mariadb) re. how to make it persistent instead of ephemeral.
 
 Tomcat v9 is only required if you wish to deploy the Fineract WAR to a separate external servlet container.  Note that you do not require to install Tomcat to develop Fineract, or to run it in production if you use the self-contained JAR, which transparently embeds a servlet container using Spring Boot.  (Until FINERACT-730, Tomcat 7/8 were also supported, but now Tomcat 9 is required.)
 
@@ -46,8 +48,9 @@ Run the following commands:
 Instructions to build the JAR file
 ============
 1. Clone the repository or download and extract the archive file to your local directory.
-2. Run `./gradlew clean bootJar` to build a modern cloud native fully self contained JAR file which will be created at `build/libs` directory.
-3. Start it using `java -jar build/libs/fineract-provider.jar` (does not require external Tomcat)
+2. Run `./gradlew clean bootJar` to build a modern cloud native fully self contained JAR file which will be created at `fineract-provider/build/libs` directory.
+3. As we are not allowed to include a JDBC driver in the built JAR, download a JDBC driver of your choice. For example: `wget https://downloads.mariadb.com/Connectors/java/connector-java-2.7.3/mariadb-java-client-2.7.3.jar`
+4. Start the jar and pass the directory where you have downloaded the JDBC driver as loader.path, for example: `java -Dloader.path=. -jar fineract-provider/build/libs/fineract-provider.jar` (does not require external Tomcat)
 
 The tenants database connection details are configured [via environment variables (as with Docker container)](#instructions-to-run-using-docker-and-docker-compose), e.g. like this:
 
@@ -56,10 +59,54 @@ The tenants database connection details are configured [via environment variable
     java -jar fineract-provider.jar
 
 
+Security
+============
+NOTE: The HTTP Basic and OAuth2 authentication schemes are mutually exclusive. You can't enable them both at the same time. Fineract checks these settings on startup and will fail if more than one authentication scheme is enabled.
+
+HTTP Basic Authentication
+------------
+By default Fineract is configured with a HTTP Basic Authentication scheme, so you actually don't have to do anything if you want to use it. But if you would like to explicitly choose this authentication scheme then there are two ways to enable it:
+1. Use environment variables (best choice if you run with Docker Compose):
+```
+FINERACT_SECURITY_BASICAUTH_ENABLED=true
+FINERACT_SECURITY_OAUTH_ENABLED=false
+```
+2. Use JVM parameters (best choice if you run the Spring Boot JAR):
+```
+java -Dfineract.security.basicauth.enabled=true -Dfineract.security.oauth.enabled=false -jar fineract-provider.jar
+```
+
+OAuth2 Authentication
+------------
+There is also an OAuth2 authentication scheme available. Again, two ways to enable it:
+1. Use environment variables (best choice if you run with Docker Compose):
+```
+FINERACT_SECURITY_BASICAUTH_ENABLED=false
+FINERACT_SECURITY_OAUTH_ENABLED=true
+```
+2. Use JVM parameters (best choice if you run the Spring Boot JAR):
+```
+java -Dfineract.security.basicauth.enabled=false -Dfineract.security.oauth.enabled=true -jar fineract-provider.jar
+```
+
+Two Factor Authentication
+------------
+You can also enable 2FA authentication. Depending on how you start Fineract add the following:
+
+1. Use environment variable (best choice if you run with Docker Compose):
+```
+FINERACT_SECURITY_2FA_ENABLED=true
+```
+2. Use JVM parameter (best choice if you run the Spring Boot JAR):
+```
+-Dfineract.security.2fa.enabled=true
+```
+
+
 Instructions to build a WAR file
 ============
 1. Clone the repository or download and extract the archive file to your local directory.
-2. Run `./gradlew clean war` to build a traditional WAR file which will be created at `build/libs` directory.
+2. Run `./gradlew :fineract-war:clean :fineract-war:war` to build a traditional WAR file which will be created at `fineract-war/build/libs` directory.
 3. Deploy this WAR to your Tomcat v9 Servlet Container.
 
 We recommend using the JAR instead of the WAR file deployment, because it's much easier.
@@ -83,9 +130,12 @@ Instructions to run and debug in Eclipse IDE
 It is possible to run Fineract in Eclipse IDE and also to debug Fineract using Eclipse's debugging facilities.
 To do this, you need to create the Eclipse project files and import the project into an Eclipse workspace:
 
-1. Import the fineract-provider project into your Eclipse workspace (File->Import->Gradle->Existing Gradle Project into Workspace, choose root directory fineract/fineract-provider)
-2. Do a clean build of the project in Eclipse (Project->Clean...)
+1. Create Eclipse project files into the Fineract project by running `./gradlew cleanEclipse eclipse`
+2. Import the fineract-provider project into your Eclipse workspace (File->Import->General->Existing Projects into Workspace, choose root directory fineract/fineract-provider)
+3. Do a clean build of the project in Eclipse (Project->Clean...)
 3. Run / debug Fineract by right clicking on org.apache.fineract.ServerApplication class and choosing Run As / Debug As -> Java Application. All normal Eclipse debugging features (breakpoints, watchpoints etc) should work as expected.
+
+If you change the project settings (dependencies etc) in Gradle, you should redo step 1 and refresh the project in Eclipse.
 
 You can also use Eclipse Junit support to run tests in Eclipse (Run As->Junit Test)
 
@@ -112,15 +162,13 @@ Now to run a new Fineract instance you can simply:
 
 1. `git clone https://github.com/apache/fineract.git ; cd fineract`
 1. for windows, use `git clone https://github.com/apache/fineract.git --config core.autocrlf=input ; cd fineract`
-1. `docker-compose build`
+1. `./gradlew :fineract-provider:jibDockerBuild -x test`
 1. `docker-compose up -d`
 1. fineract (back-end) is running at https://localhost:8443/fineract-provider/
 1. wait for https://localhost:8443/fineract-provider/actuator/health to return `{"status":"UP"}`
 1. you must go to https://localhost:8443 and remember to accept the self-signed SSL certificate of the API once in your browser, otherwise  you get a message that is rather misleading from the UI.
 1. community-app (UI) is running at http://localhost:9090/?baseApiUrl=https://localhost:8443/fineract-provider&tenantIdentifier=default
 1. login using default _username_ `mifos` and _password_ `password`
-
-The [`docker-compose.yml`](docker-compose.yml) will build the `fineract` container from the source based on the [`Dockerfile`](Dockerfile).  You could change that to use the pre-built container image instead of having to re-build it.
 
 https://hub.docker.com/r/apache/fineract has a pre-built container image of this project, built continuously.
 
@@ -258,7 +306,7 @@ is used in development when running integration tests that use the Flyway librar
 driver is however not included in and distributed with the Fineract product and is not
 required to use the product.
 If you are developer and object to using the LGPL licensed Connector/J JDBC driver,
-simply do not run the integration tests that use the Flyway library.
+simply do not run the integration tests that use the Flyway library and/or use another JDBC driver.
 As discussed in [LEGAL-462](https://issues.apache.org/jira/browse/LEGAL-462), this project therefore
 complies with the [Apache Software Foundation third-party license policy](https://www.apache.org/legal/resolved.html).
 
