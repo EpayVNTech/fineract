@@ -24,12 +24,17 @@ jobs:
           secrets: 'ACR-USERNAME, ACR-PASSWORD'
         id: getAzSecret
 
-      - name: Azure Container Registry Login
-        uses: Azure/docker-login@v1
+      - name: Set up JDK 17
+        uses: actions/setup-java@v2
         with:
-          login-server: epayprodregistry.azurecr.io
-          username: ${{ steps.getAzSecret.outputs.ACR-USERNAME }}
-          password: ${{ steps.getAzSecret.outputs.ACR-PASSWORD }}
+          java-version: '17'
+          distribution: 'zulu'
+          
+      - name: Build the image
+        run: ./gradlew :fineract-provider:clean :fineract-provider:jibDockerBuild -x test
+
+      - name: Rename built container
+        run: docker image tag fineract:latest ${ACR_NAME}/${SVC_NAME}:${{ env.TAG }}
 
       - name: Build Container image
         run: docker build -t ${ACR_NAME}/${SVC_NAME}:latest .
