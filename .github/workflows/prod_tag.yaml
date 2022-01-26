@@ -35,8 +35,16 @@ jobs:
           username: ${{ steps.getAzSecret.outputs.ACR-USERNAME }}
           password: ${{ steps.getAzSecret.outputs.ACR-PASSWORD }}
 
-      - name: Build Container image
-        run: docker build -t ${ACR_NAME}/${SVC_NAME}:${{ env.TAG }} .
+      - name: Set up JDK 17
+        uses: actions/setup-java@v2
+        with:
+          java-version: '17'
+          distribution: 'zulu'
+      - name: Build the image
+        run: ./gradlew :fineract-provider:clean :fineract-provider:jibDockerBuild -x test
+
+      - name: Rename built container
+        run: docker image tag fineract:latest ${ACR_NAME}/${SVC_NAME}:${{ env.TAG }}
 
       - name: Publish Docker image
         run: docker push ${ACR_NAME}/${SVC_NAME}:${{ env.TAG }}
